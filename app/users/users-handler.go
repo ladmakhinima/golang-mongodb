@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"mongo-golang/app/base"
 	"mongo-golang/app/loader"
 	"net/http"
@@ -76,6 +77,83 @@ func GetUserByIdHandler(response http.ResponseWriter, request *http.Request) {
 	response.Write(dataJSON)
 }
 
-func UpdateUserHandler(response http.ResponseWriter, request *http.Request) {}
+func UpdateUserHandler(response http.ResponseWriter, request *http.Request) {
+	id := request.URL.Query().Get("id")
+	objectId, _ := primitive.ObjectIDFromHex(id)
+	filterOptions := bson.M{"_id": objectId}
+	ioBody, _ := ioutil.ReadAll(request.Body)
+	var bodyJSON UserModel
+	_ = json.Unmarshal(ioBody, &bodyJSON)
+	var usr UserModel
+	err := loader.MongoDB.Collection("users").FindOne(context.Background(), filterOptions).Decode(&usr)
+	if err != nil {
+		data := base.BaseResponse{Message: "User Not Found", Data: err.Error()}
+		dataJSON, _ := json.Marshal(data)
+		response.WriteHeader(http.StatusNotFound)
+		response.Write(dataJSON)
+	}
+	updatedBody := bson.D{{"$set", bson.D{
+		{"firstname", bodyJSON.Firstname},
+		{"lastname", bodyJSON.Lastname},
+		{"age", bodyJSON.Age},
+		{"tech", bodyJSON.Tech},
+	}}}
+	updateResult, errUpdateResult := loader.MongoDB.Collection("users").UpdateOne(context.Background(), filterOptions, updatedBody)
+	fmt.Println("------- user ---------", updateResult, errUpdateResult)
 
-func DeleteUserHandler(response http.ResponseWriter, request *http.Request) {}
+	if updateResult.ModifiedCount > 0 {
+		data := base.BaseResponse{Message: "Update User Successfully ..."}
+		dataJSON, _ := json.Marshal(data)
+		response.WriteHeader(http.StatusOK)
+		response.Write(dataJSON)
+	} else {
+		if errUpdateResult != nil {
+			data := base.BaseResponse{Message: "Update Process Failed ...", Data: errUpdateResult.Error()}
+			dataJSON, _ := json.Marshal(data)
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write(dataJSON)
+		} else {
+			data := base.BaseResponse{Message: "No Updating Happened"}
+			dataJSON, _ := json.Marshal(data)
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write(dataJSON)
+		}
+	}
+}
+
+func DeleteUserHandler(response http.ResponseWriter, request *http.Request) {
+	id := request.URL.Query().Get("id")
+	objectId, _ := primitive.ObjectIDFromHex(id)
+	filterOptions := bson.M{"_id": objectId}
+	var usr UserModel
+	err := loader.MongoDB.Collection("users").FindOne(context.Background(), filterOptions).Decode(&usr)
+	if err != nil {
+		data := &base.BaseResponse{Message: "Error in Finding Document", Data: err.Error()}
+		dataJSON, _ := json.Marshal(data)
+		response.WriteHeader(http.StatusNotFound)
+		response.Write(dataJSON)
+		return
+	}
+	deletedResult, err := loader.MongoDB.Collection("users").DeleteOne(context.Background(), filterOptions)
+	if deletedResult.DeletedCount > 0 {
+		data := &base.BaseResponse{Message: "Delete User Successfully ..."}
+		dataJSON, _ := json.Marshal(data)
+		response.WriteHeader(http.StatusNotFound)
+		response.Write(dataJSON)
+		return
+	} else {
+		if err != nil {
+			data := &base.BaseResponse{Message: "Error In Delete User", Data: err.Error()}
+			dataJSON, _ := json.Marshal(data)
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write(dataJSON)
+			return
+		} else {
+			data := &base.BaseResponse{Message: "Delete Operation Not Happen", Data: err.Error()}
+			dataJSON, _ := json.Marshal(data)
+			response.WriteHeader(http.StatusInternalServerError)
+			response.Write(dataJSON)
+			return
+		}
+	}
+}
